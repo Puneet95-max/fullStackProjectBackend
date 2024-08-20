@@ -25,8 +25,8 @@ class Project_Milestone(models.Model):
         return f"{self.project.project_name}"
     
 class Manager(models.Model):
-    name=models.CharField(max_length=100)
-    project = models.ForeignKey(Project, on_delete=models.SET_NULL, related_name='managers' , blank=True ,null=True)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='managers')
+    name  = models.CharField(max_length=100)
 
     def __str__(self):
         return f"{self.name}"
@@ -44,11 +44,11 @@ class Status(models.Model):
       return f"{self.name}"
   
 class Permission(models.Model):
-    name = models.CharField(max_length=50, unique=True)
-    codename = models.CharField(max_length=100, unique=True)
+    action = models.CharField(max_length=50)
+    subject = models.CharField(max_length=50)
 
     def __str__(self):
-        return self.name
+        return f"{self.action} - {self.subject}"   
     
 
 class Roles(models.Model):
@@ -78,14 +78,26 @@ class Staff(models.Model):
     
 class Employee(models.Model):
     name=models.CharField(max_length=100)
-    project = models.ForeignKey(Project, on_delete=models.SET_NULL, related_name='employee' , blank=True ,null=True)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='employee' )
 
     def __str__(self):
         return f"{self.name}"
     
 class TeamLead(models.Model):
     name=models.CharField(max_length=100)
-    project = models.ForeignKey(Project, on_delete=models.SET_NULL, related_name='team_lead' , blank=True ,null=True)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='team_lead' )
 
     def __str__(self):
         return f"{self.name}"
+    
+class DailyReport(models.Model):
+    task = models.CharField(max_length=900)
+    description = models.TextField()
+    status = models.CharField(max_length=50)
+    date = models.DateField(auto_now_add=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    status = models.CharField(max_length=50)
+    project_name  = models.CharField(max_length=50)
+    created_at = models.DateField(auto_now_add=True)   
+    def __str__(self):
+        return f"{self.task}"

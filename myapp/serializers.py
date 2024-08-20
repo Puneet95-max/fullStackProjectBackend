@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Project, Project_Milestone , Manager , Project_Type , Status  , Permission , Roles   , UserAndRoles ,  Staff  , Employee , TeamLead
+from .models import Project, Project_Milestone  , Project_Type , Status  , Permission , Roles   , UserAndRoles ,  Staff  , Employee , TeamLead , Manager , DailyReport
 from django.contrib.auth.models import  User
 
 class Project_MilestoneSerializer(serializers.ModelSerializer):
@@ -12,24 +12,17 @@ class ManagerSerializer(serializers.ModelSerializer):
         model = Manager
         fields = ['id', 'name']
         
-    def create(self, validated_data):
-        return Manager.objects.create(**validated_data)
     
 class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
         fields = ['id', 'name']
-        
-    def create(self, validated_data):
-        return Employee.objects.create(**validated_data)
 
 class TeamLeadSerializer(serializers.ModelSerializer):
     class Meta:
         model = TeamLead
         fields = ['id', 'name']
         
-    def create(self, validated_data):
-        return TeamLead.objects.create(**validated_data)
 
 class ProjectSerializer(serializers.ModelSerializer):
     milestones = Project_MilestoneSerializer(many=True)
@@ -51,38 +44,54 @@ class ProjectSerializer(serializers.ModelSerializer):
         project = Project.objects.create(**validated_data)
 
         for manager_data in managers_data:
-            try:
-                manager, created = Manager.objects.get_or_create(**manager_data)
-                if not created:
-                    # Handle the case where multiple objects are returned
-                    manager = Manager.objects.filter(**manager_data).first()
-            except Manager.MultipleObjectsReturned:
-                manager = Manager.objects.filter(**manager_data).first()
-            project.managers.add(manager)
-
+            Manager.objects.create(project=project, **manager_data)
+            
         for milestone_data in milestones_data:
             Project_Milestone.objects.create(project=project, **milestone_data)
+        
+        for employee_data  in employees_data:
+            Employee.objects.create(project=project, **employee_data)
+        
+        for teamlead_data  in team_lead_data:
+            TeamLead.objects.create(project=project, **teamlead_data)
             
-        for employee_data in employees_data:
-            try:
-                employee, created = Employee.objects.get_or_create(**employee_data)
-                if not created:
-                    employee = Employee.objects.filter(**employee_data).first()
-            except Employee.MultipleObjectsReturned:
-                employee = Employee.objects.filter(**employee_data).first()
-            project.employee.add(employee)
-            
-        for team_lead_data in team_lead_data:
-            try:
-                team_lead, created = TeamLead.objects.get_or_create(**team_lead_data)
-                if not created:
-                    team_lead = TeamLead.objects.filter(**team_lead_data).first()
-            except TeamLead.MultipleObjectsReturned:
-                team_lead = TeamLead.objects.filter(**team_lead_data).first()
-            project.team_lead.add(team_lead)
-
-
         return project
+
+    def update(self, instance, validated_data):
+        milestones_data = validated_data.pop('milestones')
+        managers_data = validated_data.pop('managers')
+        employees_data = validated_data.pop('employee')
+        team_lead_data = validated_data.pop('team_lead')
+
+        instance.project_name = validated_data.get('project_name', instance.project_name)
+        instance.client_name = validated_data.get('client_name', instance.client_name)
+        instance.project_type = validated_data.get('project_type', instance.project_type)
+        instance.hourly_project_limit = validated_data.get('hourly_project_limit', instance.hourly_project_limit)
+        instance.hourly_end_time = validated_data.get('hourly_end_time', instance.hourly_end_time)
+        instance.hourly_start_time = validated_data.get('hourly_start_time', instance.hourly_start_time)
+        instance.save()
+
+        # Update or create managers
+        instance.managers.all().delete()
+        for manager_data in managers_data:
+            Manager.objects.create(project=instance, **manager_data)
+
+        # Update or create milestones
+        instance.milestones.all().delete()
+        for milestone_data in milestones_data:
+            Project_Milestone.objects.create(project=instance, **milestone_data)
+
+        # Update or create employees
+        instance.employee.all().delete()
+        for employee_data in employees_data:
+            Employee.objects.create(project=instance, **employee_data)
+
+        # Update or create team leads
+        instance.team_lead.all().delete()
+        for teamlead_data in team_lead_data:
+            TeamLead.objects.create(project=instance, **teamlead_data)
+
+        return instance
     
 class ProjectTypeSerializer(serializers.ModelSerializer):
     class Meta:
@@ -98,20 +107,48 @@ class StatusSerializer(serializers.ModelSerializer):
 class PermissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Permission
-        fields = ('name', 'codename')
+        fields = '__all__'
 
 class RoleSerializer(serializers.ModelSerializer):
     permissions = PermissionSerializer(many=True, read_only=True)
 
     class Meta:
         model = Roles
-        fields = ('id', 'name', 'permissions')
+        fields = ['id', 'name', 'permissions']
         
+class RoleCreateUpdateSerializer(serializers.ModelSerializer):
+    permissions = PermissionSerializer(many=True)
+
+    class Meta:
+        model = Roles
+        fields = ['id', 'name', 'permissions']
+
+    def create(self, validated_data):
+        permissions_data = validated_data.pop('permissions')
+        role = Roles.objects.create(**validated_data)
+        for permission_data in permissions_data:
+            permission, created = Permission.objects.get_or_create(**permission_data)
+            role.permissions.add(permission)
+        return role
+
+    def update(self, instance, validated_data):
+        permissions_data = validated_data.pop('permissions', None)
+        instance.name = validated_data.get('name', instance.name)
+        instance.save()
+
+        if permissions_data is not None:
+            instance.permissions.clear()
+            for permission_data in permissions_data:
+                permission, created = Permission.objects.get_or_create(**permission_data)
+                instance.permissions.add(permission)
+
+        return instance
+
+            
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'username', 'email')
-        
+        fields = ['id', 'username', 'email']
 
 class UserAndRolesSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source='user.id')
@@ -121,7 +158,46 @@ class UserAndRolesSerializer(serializers.ModelSerializer):
         model = UserAndRoles
         fields = ('user_id', 'role')
         
+class UserRoleAssignmentSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+    role = serializers.CharField()
+
+    def create(self, validated_data):
+        email = validated_data['email']
+        password = validated_data['password']
+        role_name = validated_data['role']
+
+        # Check if user with this email already exists
+        if User.objects.filter(username=email).exists():
+            raise serializers.ValidationError("User with this email already exists.")
+
+        # Create the user
+        user = User.objects.create(username=email, email=email)
+        user.set_password(password)
+        user.save()
+
+        # Create or retrieve the role
+        role, created = Roles.objects.get_or_create(name=role_name)
+
+        # Create the user role assignment
+        user_role, created = UserAndRoles.objects.get_or_create(user=user, role=role)
+        
+        return user_role
+    
 class StaffSerializer(serializers.ModelSerializer):
     class Meta:
         model = Staff
         fields = ['id', 'name', 'designation', 'position']
+        
+class DailyReportGetSerializer(serializers.ModelSerializer):
+    user = UserSerializer()
+
+    class Meta:
+        model = DailyReport
+        fields = '__all__'
+
+class DailyReportCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DailyReport
+        fields = '__all__'
